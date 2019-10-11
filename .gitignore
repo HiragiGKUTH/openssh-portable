@@ -27,3 +27,4 @@ ssh-pkcs11-helper
 sshd
 !regress/misc/fuzz-harness/Makefile
 tags
+.DS_Store
