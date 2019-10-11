@@ -1,0 +1,12 @@
+version: '3'
+services:
+  sshd-build: 
+    build: ./vm
+    image: sshd-build:latest
+    hostname: sshd.builder
+    container_name: sshd-container
+    restart: always
+    volumes:
+      - ./:/root/openssh-portable
+      - /sys/fs/cgroup
+    tty: true
