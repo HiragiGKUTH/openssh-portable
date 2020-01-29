@@ -131,6 +131,7 @@ extern double NEWKEYS_TIME;
 
 // logging authinfo, int authenticated is other than 0, then it means success.
 void logging_authinfo(int authenticated, const char *ipaddr) {
+#ifdef UAUTH_TIME // this func execute only UAUTH_TIME is set
 	struct timespec start;
 	struct timespec end;
 	struct tm *local_time;
@@ -142,7 +143,7 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 	local_time = localtime(&end.tv_sec); 
 
 	// if this authentication request is not first attempt, use s2 time
-	start = (MULTIPLE_AUTH) ? s : s2;
+	start = (MULTIPLE_AUTH) ? s2 : s;
 
 	// calc authtime
 	double authtime = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1.0E-9;
@@ -153,6 +154,7 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 	// authentication result
 	char *authresult = (authenticated) ? "Success" : "Fail";
 
+	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, Y,M,D,H,M,S,US, KexTime, NewKeysTime
 	logit("%s,%s,%s,%lf,%s,%06lf,%d,%02d,%02d,%02d,%02d,%02d,%06ld,%lf,%lf",
 			authresult,
 			USER,
@@ -169,6 +171,8 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 			end.tv_nsec / 1000, // nsec -> usec
 			KEXINIT_TIME,
 			NEWKEYS_TIME);
+
+#endif
 
 	return;
 }

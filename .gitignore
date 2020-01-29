@@ -2,7 +2,7 @@
 buildpkg.sh
 config.h
 config.status
-
+config.log
 openbsd-compat/Makefile
 openbsd-compat/regress/Makefile
 openssh.xml
