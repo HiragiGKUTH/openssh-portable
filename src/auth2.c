@@ -57,7 +57,6 @@
 #include <stdio.h>
 #include "stdlib.h"
 
-#include <sys/time.h> //
 #include <time.h>     // for AUTH_INFO
 #include "canohost.h" //
 #endif  /* UAUTH_TIME */
@@ -112,8 +111,8 @@ static char *authmethods_get(Authctxt *authctxt);
 static int list_starts_with(const char *, const char *, const char *);
 
 #ifdef UAUTH_TIME
-struct timeval s;  // store the beginning of the time for password input
-struct timeval s2; // store to this variable if there are several attempts in
+struct timespec s;  // store the beginning of the time for password input
+struct timespec s2; // store to this variable if there are several attempts in
                    //   one connection.
 int MULTIPLE_AUTH = 0;
 char *USER;        // the variable for AuthInfo username
@@ -129,6 +128,50 @@ extern double KEXINIT_TIME;
 double NEWKEYS_TIME;
 extern double NEWKEYS_TIME;
 #endif /* UAUTH_TIME */
+
+// logging authinfo, int authenticated is other than 0, then it means success.
+void logging_authinfo(int authenticated) {
+	struct timespec start;
+	struct timespec end;
+	struct tm local_time;
+
+	// get auth finished time
+	clock_gettime(CLOCK_REALTIME, &end);
+
+	// localize the time
+	local_time = localtime(&end.tv_sec); 
+
+	// if this authentication request is not first attempt, use s2 time
+	start = MULTIPLE_AUTH : s ? s2;
+
+	// calc authtime
+	double authtime = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1.0E-9;
+
+	// detection
+	char *detection = authtime < AuthTimeThreshold : "Attack" ? "Normal";
+	
+	// authentication result
+	char *authresult = authenticated : "Success" ? "Fail";
+
+	logit("%s,%s,%s,%lf,%s,%06lf,%d,%02d,%02d,%02d,%02d,%02d,%06d,%lf,%lf",
+			authresult,
+			USER,
+			ssh_remote_ipaddr(ssh),
+			authtime,
+			detection,
+			((KEXINIT_TIME + NEWKEYS_TIME)/2),
+			time_st->tm_year+1900,
+			time_st->tm_mon+1,
+			time_st->tm_mday,
+			time_st->tm_hour,
+			time_st->tm_min,
+			time_st->tm_sec,
+			end.tv_nsec / 1000,
+			KEXINIT_TIME,
+			NEWKEYS_TIME);
+
+	return;
+}
 
 char *
 auth2_read_banner(void)
@@ -257,7 +300,7 @@ input_service_request(int type, u_int32_t seq, struct ssh *ssh)
 		// variable for the beginning time of authentication:
 		// s in userauth_finish() if client sends none method,
 		// s in here if not,
-		gettimeofday(&s, NULL);
+		clock_gettime(CLOCK_REALTIME, &s);
 #endif /* UAUTH_TIME */
 		if ((r = sshpkt_start(ssh, SSH2_MSG_SERVICE_ACCEPT)) != 0 ||
 		    (r = sshpkt_put_cstring(ssh, service)) != 0 ||
@@ -488,42 +531,7 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		authctxt->success = 1;
 		ssh_packet_set_log_preamble(ssh, "user %s", authctxt->user);
 #ifdef UAUTH_TIME
-		gettimeofday(&e, NULL);
-		time_st = localtime(&e.tv_sec); // localize the time
-
-		// s in input_service_request() is used for the beginning of
-		//     authentication in one connection,
-		// s2 in userauth_finish() is used for after that. 
-		if(MULTIPLE_AUTH == 0){
-			authtime = (e.tv_sec - s.tv_sec)
-					+ (e.tv_usec - s.tv_usec) * 1.0E-6;
-		}else{
-			authtime = (e.tv_sec - s2.tv_sec)
-					+ (e.tv_usec - s2.tv_usec) * 1.0E-6;
-		}
-
-		if (authtime < AuthTimeThreshold) {
-			strcpy(detection, "Attack");
-		} else {
-			strcpy(detection, "Normal");
-		}
-
-		logit("[Auth:Success,User:%s,IP:%s,Time:%lf,Detect:%s,RTT:%06lf,Year:%d,Month:%02d,Day:%02d,Hour:%02d,Minute:%02d,Second:%02d,MicroSec:%06d]KEXINIT:%lf,NEWKEYS:%lf",
-		USER,
-		ssh_remote_ipaddr(ssh),
-		authtime,
-		detection,
-		((KEXINIT_TIME + NEWKEYS_TIME)/2),
-		time_st->tm_year+1900,
-		time_st->tm_mon+1,
-		time_st->tm_mday,
-		time_st->tm_hour,
-		time_st->tm_min,
-		time_st->tm_sec,
-		e.tv_usec,
-		KEXINIT_TIME,
-		NEWKEYS_TIME
-		);
+		logging_authinfo(authenticated);
 #endif  /* UAUTH_TIME */
 
 	} else {
@@ -531,44 +539,7 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		// ignoring none before password authentication and
 		//          fail of publickey authentication
 		if(strcmp(method,"password") == 0) {
-			gettimeofday(&e, NULL); // time of finish authentication
-			time_st = localtime(&e.tv_sec);
-
-			// s in input_service_request() is used for the
-			//     beginning of authentication in one connection,
-			// s2 in userauth_finish() is used for after that. 
-			if (MULTIPLE_AUTH == 0){
-				authtime = (e.tv_sec - s.tv_sec)
-					+ (e.tv_usec - s.tv_usec) * 1.0E-6;
-				//logit("in 0");
-			}else{
-				authtime = (e.tv_sec - s2.tv_sec)
-					+ (e.tv_usec - s2.tv_usec) * 1.0E-6;
-				//logit("in 1");
-			}
-
-			if (authtime < AuthTimeThreshold) {
-				strcpy(detection, "Attack");
-			} else {
-				strcpy(detection, "Normal");
-			}
-
-			logit("[Auth:Fail,User:%s,IP:%s,Time:%lf,Detect:%s,RTT:%06lf,Year:%d,Month:%02d,Day:%02d,Hour:%02d,Minute:%02d,Second:%02d,MicroSec:%06d]KEXINIT:%lf,NEWKEYS:%lf",
-				USER,
-				ssh_remote_ipaddr(ssh),
-				authtime,
-				detection,
-				((KEXINIT_TIME + NEWKEYS_TIME)/2),
-				time_st->tm_year+1900,
-				time_st->tm_mon+1,
-				time_st->tm_mday,
-				time_st->tm_hour,
-				time_st->tm_min,
-				time_st->tm_sec,
-				e.tv_usec,
-				KEXINIT_TIME,
-				NEWKEYS_TIME
-				);
+			logging_authinfo(authenticated);
 		}
 #endif  /* UAUTH_TIME */
 
@@ -593,19 +564,19 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 			fatal("%s: %s", __func__, ssh_err(r));
 		free(methods);
 #ifdef UAUTH_TIME
-                //logit("%s",method);
+		// logit("%s",method);
 		// fulfill this part after two times
-                if(strcmp(method,"password") == 0) {
-                        MULTIPLE_AUTH = 1;
-                        gettimeofday(&s2, NULL);
-                        //logit("received password method.");
-                }
+		if(strcmp(method,"password") == 0) {
+			MULTIPLE_AUTH = 1;
+			clock_gettime(CLOCK_REALTIME, &s2);
+			//logit("received password method.");
+		}
 
 		// fulfill this part at the first attempt
-                if(strcmp(method,"none") == 0) {
-                        gettimeofday(&s, NULL);
-                        //logit("received none method. started userauth. ");
-                }
+		if(strcmp(method,"none") == 0) {
+			gettimeofday(&s, NULL);
+			//logit("received none method. started userauth. ");
+		}
 #endif  /* UAUTH_TIME */
 	}
 }
