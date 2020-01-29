@@ -1,0 +1,539 @@
+diff -crN -X diff.ignore openssh-8.1p1/auth2.c openssh-8.1p1_uehara/auth2.c
+*** openssh-8.1p1/auth2.c	2019-10-09 09:31:03.000000000 +0900
+--- openssh-8.1p1_uehara/auth2.c	2019-10-18 02:45:56.733758927 +0900
+***************
+*** 53,58 ****
+--- 53,66 ----
+  #include "dispatch.h"
+  #include "pathnames.h"
+  #include "ssherr.h"
++ #ifdef UAUTH_TIME
++ #include <stdio.h>
++ #include "stdlib.h"
++ 
++ #include <sys/time.h> //
++ #include <time.h>     // for AUTH_INFO
++ #include "canohost.h" //
++ #endif  /* UAUTH_TIME */
+  #ifdef GSSAPI
+  #include "ssh-gss.h"
+  #endif
+***************
+*** 103,108 ****
+--- 111,135 ----
+  #define MATCH_PARTIAL	3	/* method matches, submethod can't be checked */
+  static int list_starts_with(const char *, const char *, const char *);
+  
++ #ifdef UAUTH_TIME
++ struct timeval s;  // store the beginning of the time for password input
++ struct timeval s2; // store to this variable if there are several attempts in
++                    //   one connection.
++ int MULTIPLE_AUTH = 0;
++ char *USER;        // the variable for AuthInfo username
++ double AuthTimeThreshold;
++ 
++ //#define HPING_BUF 256
++ //char HPING_RTT[10];
++ //double HPING_RTT_DOUBLE;
++ 
++ // the variables for storing the RTT when exchanging the keys
++ double KEXINIT_TIME;
++ extern double KEXINIT_TIME;
++ double NEWKEYS_TIME;
++ extern double NEWKEYS_TIME;
++ #endif /* UAUTH_TIME */
++ 
+  char *
+  auth2_read_banner(void)
+  {
+***************
+*** 186,191 ****
+--- 213,226 ----
+  	Authctxt *authctxt = ssh->authctxt;
+  	char *service = NULL;
+  	int r, acceptit = 0;
++ #ifdef UAUTH_TIME
++ 	//FILE *hping_fp;
++ 	//char hbuf[HPING_BUF];
++ 	//memset(hbuf,NULL,HPING_BUF);
++ 	//char hping_command[100] = "python /home/uehara/Research/python/wrap_hping.py ";
++ 	//debug("in auth2.c NEWKEYS_TIME = %lf",NEWKEYS_TIME);
++ 	//debug("in auth2.c KEXINIT_TIME = %lf",KEXINIT_TIME);
++ #endif	/* UAUTH_TIME */
+  
+  	if ((r = sshpkt_get_cstring(ssh, &service, NULL)) != 0 ||
+  	    (r = sshpkt_get_end(ssh)) != 0)
+***************
+*** 205,210 ****
+--- 240,264 ----
+  	/* XXX all other service requests are denied */
+  
+  	if (acceptit) {
++ #ifdef UAUTH_TIME
++ 		//strcat(hping_command,ssh_remote_ipaddr(ssh));
++ 		//char *hping_cmd = &hping_command;
++ 		//hping_fp = popen(hping_cmd,"r");
++ 		//fgets(hbuf,HPING_BUF,hping_fp);
++ 	        //strtok(hbuf,"\n\0");  // remove CR from the result 
++ 					// of hping3 command
++ 		//strcpy(HPING_RTT,hbuf);
++ 		//HPING_RTT_DOUBLE = atof(HPING_RTT); // convert the result of
++ 						// hping to arithmetic value
++ 		//HPING_RTT_DOUBLE = HPING_RTT_DOUBLE * 0.001;
++ 			// convert the unit of result of hping
++ 			// from mili-second to seconds
++ 
++ 		// variable for the beginning time of authentication:
++ 		// s in userauth_finish() if client sends none method,
++ 		// s in here if not,
++ 		gettimeofday(&s, NULL);
++ #endif /* UAUTH_TIME */
+  		if ((r = sshpkt_start(ssh, SSH2_MSG_SERVICE_ACCEPT)) != 0 ||
+  		    (r = sshpkt_put_cstring(ssh, service)) != 0 ||
+  		    (r = sshpkt_send(ssh)) != 0 ||
+***************
+*** 277,282 ****
+--- 331,340 ----
+  	debug("userauth-request for user %s service %s method %s", user, service, method);
+  	debug("attempt %d failures %d", authctxt->attempt, authctxt->failures);
+  
++ #ifdef UAUTH_TIME
++         USER = user; // store the AuthInfo username to the global variable
++ #endif  /* UAUTH_TIME */
++ 
+  	if ((style = strchr(user, ':')) != NULL)
+  		*style++ = 0;
+  
+***************
+*** 355,360 ****
+--- 413,426 ----
+  	Authctxt *authctxt = ssh->authctxt;
+  	char *methods;
+  	int r, partial = 0;
++ #ifdef UAUTH_TIME
++ 	struct timeval e;
++ 	double authtime;
++ 	/* double AuthTimeThreshold = 0.2044475; */
++ 	char detection[10];
++ 	//char *password = "password";
++ 	struct tm *time_st;
++ #endif  /* UAUTH_TIME */
+  
+  	if (!authctxt->valid && authenticated)
+  		fatal("INTERNAL ERROR: authenticated invalid user %s",
+***************
+*** 421,427 ****
+--- 487,577 ----
+  		/* now we can break out */
+  		authctxt->success = 1;
+  		ssh_packet_set_log_preamble(ssh, "user %s", authctxt->user);
++ #ifdef UAUTH_TIME
++ 		gettimeofday(&e, NULL);
++ 		time_st = localtime(&e.tv_sec); // localize the time
++ 
++ 		// s in input_service_request() is used for the beginning of
++ 		//     authentication in one connection,
++ 		// s2 in userauth_finish() is used for after that. 
++ 		if(MULTIPLE_AUTH == 0){
++ 			authtime = (e.tv_sec - s.tv_sec)
++ 					+ (e.tv_usec - s.tv_usec) * 1.0E-6;
++ 		}else{
++ 			authtime = (e.tv_sec - s2.tv_sec)
++ 					+ (e.tv_usec - s2.tv_usec) * 1.0E-6;
++ 		}
++ 
++ 		if (authtime < AuthTimeThreshold) {
++ 			strcpy(detection, "Attack");
++ 		} else {
++ 			strcpy(detection, "Normal");
++ 		}
++ 
++ 		logit("[Auth:Success,User:%s,IP:%s,Time:%lf,Detect:%s,RTT:%06lf,Year:%d,Month:%02d,Day:%02d,Hour:%02d,Minute:%02d,Second:%02d,MicroSec:%06d]KEXINIT:%lf,NEWKEYS:%lf",
++ 		USER,
++ 		ssh_remote_ipaddr(ssh),
++ 		authtime,
++ 		detection,
++ 		((KEXINIT_TIME + NEWKEYS_TIME)/2),
++ 		time_st->tm_year+1900,
++ 		time_st->tm_mon+1,
++ 		time_st->tm_mday,
++ 		time_st->tm_hour,
++ 		time_st->tm_min,
++ 		time_st->tm_sec,
++ 		e.tv_usec,
++ 		KEXINIT_TIME,
++ 		NEWKEYS_TIME
++ 		);
++ #endif  /* UAUTH_TIME */
++ 
+  	} else {
++ #ifdef UAUTH_TIME
++ 		// ignoring none before password authentication and
++ 		//          fail of publickey authentication
++ 		if(strcmp(method,"password") == 0) {
++ 			gettimeofday(&e, NULL); // time of finish authentication
++ 			time_st = localtime(&e.tv_sec);
++ 
++ 			// s in input_service_request() is used for the
++ 			//     beginning of authentication in one connection,
++ 			// s2 in userauth_finish() is used for after that. 
++ 			if (MULTIPLE_AUTH == 0){
++ 				authtime = (e.tv_sec - s.tv_sec)
++ 					+ (e.tv_usec - s.tv_usec) * 1.0E-6;
++ 				//logit("in 0");
++ 			}else{
++ 				authtime = (e.tv_sec - s2.tv_sec)
++ 					+ (e.tv_usec - s2.tv_usec) * 1.0E-6;
++ 				//logit("in 1");
++ 			}
++ 
++ 			if (authtime < AuthTimeThreshold) {
++ 				strcpy(detection, "Attack");
++ 			} else {
++ 				strcpy(detection, "Normal");
++ 			}
++ 
++ 			logit("[Auth:Fail,User:%s,IP:%s,Time:%lf,Detect:%s,RTT:%06lf,Year:%d,Month:%02d,Day:%02d,Hour:%02d,Minute:%02d,Second:%02d,MicroSec:%06d]KEXINIT:%lf,NEWKEYS:%lf",
++ 				USER,
++ 				ssh_remote_ipaddr(ssh),
++ 				authtime,
++ 				detection,
++ 				((KEXINIT_TIME + NEWKEYS_TIME)/2),
++ 				time_st->tm_year+1900,
++ 				time_st->tm_mon+1,
++ 				time_st->tm_mday,
++ 				time_st->tm_hour,
++ 				time_st->tm_min,
++ 				time_st->tm_sec,
++ 				e.tv_usec,
++ 				KEXINIT_TIME,
++ 				NEWKEYS_TIME
++ 				);
++ 		}
++ #endif  /* UAUTH_TIME */
++ 
+  		/* Allow initial try of "none" auth without failure penalty */
+  		if (!partial && !authctxt->server_caused_failure &&
+  		    (authctxt->attempt > 1 || strcmp(method, "none") != 0))
+***************
+*** 442,447 ****
+--- 592,612 ----
+  		    (r = ssh_packet_write_wait(ssh)) != 0)
+  			fatal("%s: %s", __func__, ssh_err(r));
+  		free(methods);
++ #ifdef UAUTH_TIME
++                 //logit("%s",method);
++ 		// fulfill this part after two times
++                 if(strcmp(method,"password") == 0) {
++                         MULTIPLE_AUTH = 1;
++                         gettimeofday(&s2, NULL);
++                         //logit("received password method.");
++                 }
++ 
++ 		// fulfill this part at the first attempt
++                 if(strcmp(method,"none") == 0) {
++                         gettimeofday(&s, NULL);
++                         //logit("received none method. started userauth. ");
++                 }
++ #endif  /* UAUTH_TIME */
+  	}
+  }
+  
+diff -crN -X diff.ignore openssh-8.1p1/config.h.in openssh-8.1p1_uehara/config.h.in
+*** openssh-8.1p1/config.h.in	2019-10-09 09:39:34.000000000 +0900
+--- openssh-8.1p1_uehara/config.h.in	2019-10-17 21:03:37.194420860 +0900
+***************
+*** 87,92 ****
+--- 87,95 ----
+  /* Define if you have BSD auth support */
+  #undef BSD_AUTH
+  
++ /* Define whether to enable Uehara's authentication time code block */
++ #undef UAUTH_TIME
++ 
+  /* Define if you want to specify the path to your lastlog file */
+  #undef CONF_LASTLOG_FILE
+  
+diff -crN -X diff.ignore openssh-8.1p1/configure openssh-8.1p1_uehara/configure
+*** openssh-8.1p1/configure	2019-10-09 09:39:30.000000000 +0900
+--- openssh-8.1p1_uehara/configure	2019-10-17 21:04:05.611356365 +0900
+***************
+*** 780,785 ****
+--- 780,786 ----
+  with_superuser_path
+  with_4in6
+  with_bsd_auth
++ with_authtime
+  with_pid_dir
+  enable_lastlog
+  enable_utmp
+***************
+*** 1472,1477 ****
+--- 1473,1479 ----
+    --with-superuser-path=  Specify different path for super-user
+    --with-4in6             Check for and convert IPv4 in IPv6 mapped addresses
+    --with-bsd-auth         Enable BSD auth support
++   --with-authtime         Enable Uehara's authentication time feature
+    --with-pid-dir=PATH     Specify location of sshd.pid file
+    --with-lastlog=FILE|DIR specify lastlog location common locations
+  
+***************
+*** 18963,18968 ****
+--- 18965,18986 ----
+  fi
+  
+  
++ # Whether to enable Uehara's authentication time code block
++ AUTHTIME_MSG=no
++ 
++ # Check whether --with-authtime was given.
++ if test "${with_authtime+set}" = set; then :
++   withval=$with_authtime;
++ 		if test "x$withval" != "xno" ; then
++ 
++ $as_echo "#define UAUTH_TIME 1" >>confdefs.h
++ 
++ 			AUTHTIME_MSG=yes
++ 		fi
++ 
++ 
++ fi
++ 
+  # Where to place sshd.pid
+  piddir=/var/run
+  # make sure the directory exists
+***************
+*** 20777,20782 ****
+--- 20795,20801 ----
+  echo "                  BSD Auth support: $BSD_AUTH_MSG"
+  echo "              Random number source: $RAND_MSG"
+  echo "             Privsep sandbox style: $SANDBOX_STYLE"
++ echo "      Uehara's authentication time: $AUTHTIME_MSG"
+  
+  echo ""
+  
+diff -crN -X diff.ignore openssh-8.1p1/configure.ac openssh-8.1p1_uehara/configure.ac
+*** openssh-8.1p1/configure.ac	2019-10-09 09:31:03.000000000 +0900
+--- openssh-8.1p1_uehara/configure.ac	2019-10-17 21:01:54.693963777 +0900
+***************
+*** 4854,4859 ****
+--- 4854,4871 ----
+  	]
+  )
+  
++ # Whether to enable Uehara's authentication time code block
++ AUTHTIME_MSG=no
++ AC_ARG_WITH([authtime],
++ 	[  --with-authtime         Enable Uehara's authentication time feature],
++ 	[
++ 		if test "x$withval" != "xno" ; then
++ 			AC_DEFINE([UAUTH_TIME], [1],
++ 				[Define if you have authentication time feature])
++ 			AUTHTIME_MSG=yes
++ 		fi
++ 	]
++ )
+  # Where to place sshd.pid
+  piddir=/var/run
+  # make sure the directory exists
+***************
+*** 5229,5234 ****
+--- 5241,5247 ----
+  echo "                  BSD Auth support: $BSD_AUTH_MSG"
+  echo "              Random number source: $RAND_MSG"
+  echo "             Privsep sandbox style: $SANDBOX_STYLE"
++ echo "      Uehara's authentication time: $AUTHTIME_MSG"
+  
+  echo ""
+  
+diff -crN -X diff.ignore openssh-8.1p1/kex.c openssh-8.1p1_uehara/kex.c
+*** openssh-8.1p1/kex.c	2019-10-09 09:31:03.000000000 +0900
+--- openssh-8.1p1_uehara/kex.c	2019-10-18 01:49:43.236511846 +0900
+***************
+*** 59,64 ****
+--- 59,74 ----
+  #include "ssherr.h"
+  #include "sshbuf.h"
+  #include "digest.h"
++ #ifdef UAUTH_TIME
++ #include <sys/time.h>
++ 
++ struct timeval kexinit_sent;
++ struct timeval newkeys_sent;
++ double KEXINIT_TIME;
++ extern double KEXINIT_TIME;
++ double NEWKEYS_TIME;
++ extern double NEWKEYS_TIME;
++ #endif  /* UAUTH_TIME */
+  
+  /* prototype */
+  static int kex_choose_conf(struct ssh *);
+***************
+*** 458,463 ****
+--- 468,476 ----
+  		return r;
+  	debug("SSH2_MSG_NEWKEYS sent");
+  	ssh_dispatch_set(ssh, SSH2_MSG_NEWKEYS, &kex_input_newkeys);
++ #ifdef UAUTH_TIME
++         gettimeofday(&newkeys_sent, NULL);
++ #endif /* UAUTH_TIME */
+  	if (ssh->kex->ext_info_c && (ssh->kex->flags & KEX_INITIAL) != 0)
+  		if ((r = kex_send_ext_info(ssh)) != 0)
+  			return r;
+***************
+*** 508,517 ****
+--- 521,540 ----
+  {
+  	struct kex *kex = ssh->kex;
+  	int r;
++ #ifdef UAUTH_TIME
++ 	double newkeys_time;
++ 	struct timeval  newkeys_finish;
++ #endif	/* UAUTH_TIME */
+  
+  	debug("SSH2_MSG_NEWKEYS received");
+  	ssh_dispatch_set(ssh, SSH2_MSG_NEWKEYS, &kex_protocol_error);
+  	ssh_dispatch_set(ssh, SSH2_MSG_KEXINIT, &kex_input_kexinit);
++ #ifdef UAUTH_TIME
++         gettimeofday(&newkeys_finish, NULL);
++         NEWKEYS_TIME = (newkeys_finish.tv_sec - newkeys_sent.tv_sec)
++                      + (newkeys_finish.tv_usec - newkeys_sent.tv_usec) * 1.0E-6;
++         debug("NEWKEYS_TIME = %lf",NEWKEYS_TIME);
++ #endif  /* UAUTH_TIME */
+  	if ((r = sshpkt_get_end(ssh)) != 0)
+  		return r;
+  	if ((r = ssh_set_newkeys(ssh, MODE_IN)) != 0)
+***************
+*** 561,566 ****
+--- 584,595 ----
+  	}
+  	debug("SSH2_MSG_KEXINIT sent");
+  	kex->flags |= KEX_INIT_SENT;
++ 
++ #ifdef UAUTH_TIME
++ 	// grab the beginning time of key exchanging
++         gettimeofday(&kexinit_sent, NULL);
++ #endif  /* UAUTH_TIME */
++ 
+  	return 0;
+  }
+  
+***************
+*** 573,578 ****
+--- 602,610 ----
+  	u_int i;
+  	size_t dlen;
+  	int r;
++ #ifdef UAUTH_TIME
++ 	struct timeval kexinit_finish;
++ #endif	/* UAUTH_TIME */
+  
+  	debug("SSH2_MSG_KEXINIT received");
+  	if (kex == NULL) {
+***************
+*** 581,586 ****
+--- 613,626 ----
+  	}
+  	ssh_dispatch_set(ssh, SSH2_MSG_KEXINIT, NULL);
+  	ptr = sshpkt_ptr(ssh, &dlen);
++ 
++ #ifdef UAUTH_TIME
++ 	// grab the finish time of key exchange
++         gettimeofday(&kexinit_finish, NULL);
++         KEXINIT_TIME = (kexinit_finish.tv_sec - kexinit_sent.tv_sec) + (kexinit_finish.tv_usec - kexinit_sent.tv_usec) * 1.0E-6;
++         debug("KEXINIT_TIME = %lf",KEXINIT_TIME);
++ #endif  /* UAUTH_TIME */
++ 
+  	if ((r = sshbuf_put(kex->peer, ptr, dlen)) != 0)
+  		return r;
+  
+diff -crN -X diff.ignore openssh-8.1p1/servconf.c openssh-8.1p1_uehara/servconf.c
+*** openssh-8.1p1/servconf.c	2019-10-09 09:31:03.000000000 +0900
+--- openssh-8.1p1_uehara/servconf.c	2019-10-17 03:41:23.561093222 +0900
+***************
+*** 510,515 ****
+--- 510,518 ----
+  	sStreamLocalBindMask, sStreamLocalBindUnlink,
+  	sAllowStreamLocalForwarding, sFingerprintHash, sDisableForwarding,
+  	sExposeAuthInfo, sRDomain,
++ #ifdef UAUTH_TIME
++         sAuthTimeThreshold, // token for authentication time threshold
++ #endif  /* UAUTH_TIME */
+  	sDeprecated, sIgnore, sUnsupported
+  } ServerOpCodes;
+  
+***************
+*** 658,663 ****
+--- 661,670 ----
+  	{ "exposeauthinfo", sExposeAuthInfo, SSHCFG_ALL },
+  	{ "rdomain", sRDomain, SSHCFG_ALL },
+  	{ "casignaturealgorithms", sCASignatureAlgorithms, SSHCFG_ALL },
++ #ifdef UAUTH_TIME
++ 	// authentication time threshold
++         { "authtimethreshold", sAuthTimeThreshold, SSHCFG_GLOBAL},
++ #endif  /* UAUTH_TIME */
+  	{ NULL, sBadOption, 0 }
+  };
+  
+***************
+*** 2173,2178 ****
+--- 2180,2194 ----
+  			*charptr = xstrdup(arg);
+  		break;
+  
++ #ifdef UAUTH_TIME
++ 	// store the address for the strings that is read from config file
++ 	//  to the variable, `arg'
++         case sAuthTimeThreshold:
++                 arg = strdelim(&cp);
++                 AuthTimeThreshold = atof(arg);
++                 break;
++ 
++ #endif  /* UAUTH_TIME */
+  	case sDeprecated:
+  	case sIgnore:
+  	case sUnsupported:
+diff -crN -X diff.ignore openssh-8.1p1/servconf.h openssh-8.1p1_uehara/servconf.h
+*** openssh-8.1p1/servconf.h	2019-10-09 09:31:03.000000000 +0900
+--- openssh-8.1p1_uehara/servconf.h	2019-10-17 03:49:13.943489713 +0900
+***************
+*** 211,216 ****
+--- 211,219 ----
+  	int	fingerprint_hash;
+  	int	expose_userauth_info;
+  	u_int64_t timing_secret;
++ #ifdef UAUTH_TIME
++         double  auth_time_threshold;
++ #endif /* UAUTH_TIME */
+  }       ServerOptions;
+  
+  /* Information about the incoming connection as used by Match */
+***************
+*** 225,230 ****
+--- 228,241 ----
+  				 * unspecified */
+  };
+  
++ #ifdef UAUTH_TIME
++ /* default value of authentication time: 0.78 */
++ #define DEFAULT_AUTH_TIME_THRESHOLD  0.78
++ 
++ /* the variable for authentication time threshold */
++ /* an instance of this variable is declared in auth2.c */
++ extern double AuthTimeThreshold;
++ #endif  /* UAUTH_TIME */
+  
+  /*
+   * These are string config options that must be copied between the
+diff -crN -X diff.ignore openssh-8.1p1/sshd_config openssh-8.1p1_uehara/sshd_config
+*** openssh-8.1p1/sshd_config	2019-10-09 09:31:03.000000000 +0900
+--- openssh-8.1p1_uehara/sshd_config	2019-10-18 02:40:58.959549668 +0900
+***************
+*** 114,116 ****
+--- 114,119 ----
+  #	AllowTcpForwarding no
+  #	PermitTTY no
+  #	ForceCommand cvs server
++ 
++ # Uehara's authentication time
++ AuthTimeThreshold 0.78

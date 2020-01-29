@@ -4854,6 +4854,18 @@ AC_ARG_WITH([bsd-auth],
 	]
 )
 
+# Whether to enable Uehara's authentication time code block
+AUTHTIME_MSG=no
+AC_ARG_WITH([authtime],
+	[  --with-authtime         Enable Uehara's authentication time feature],
+	[
+		if test "x$withval" != "xno" ; then
+			AC_DEFINE([UAUTH_TIME], [1],
+				[Define if you have authentication time feature])
+			AUTHTIME_MSG=yes
+		fi
+	]
+)
 # Where to place sshd.pid
 piddir=/var/run
 # make sure the directory exists
@@ -5229,6 +5241,7 @@ echo "           Translate v4 in v6 hack: $IPV4_IN6_HACK_MSG"
 echo "                  BSD Auth support: $BSD_AUTH_MSG"
 echo "              Random number source: $RAND_MSG"
 echo "             Privsep sandbox style: $SANDBOX_STYLE"
+echo "      Uehara's authentication time: $AUTHTIME_MSG"
 
 echo ""
 

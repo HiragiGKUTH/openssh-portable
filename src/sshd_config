@@ -114,3 +114,6 @@ Subsystem	sftp	/usr/libexec/sftp-server
 #	AllowTcpForwarding no
 #	PermitTTY no
 #	ForceCommand cvs server
+
+# Uehara's authentication time
+AuthTimeThreshold 0.78

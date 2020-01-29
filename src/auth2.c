@@ -53,6 +53,14 @@
 #include "dispatch.h"
 #include "pathnames.h"
 #include "ssherr.h"
+#ifdef UAUTH_TIME
+#include <stdio.h>
+#include "stdlib.h"
+
+#include <sys/time.h> //
+#include <time.h>     // for AUTH_INFO
+#include "canohost.h" //
+#endif  /* UAUTH_TIME */
 #ifdef GSSAPI
 #include "ssh-gss.h"
 #endif
@@ -102,6 +110,25 @@ static char *authmethods_get(Authctxt *authctxt);
 #define MATCH_BOTH	2	/* method and submethod match */
 #define MATCH_PARTIAL	3	/* method matches, submethod can't be checked */
 static int list_starts_with(const char *, const char *, const char *);
+
+#ifdef UAUTH_TIME
+struct timeval s;  // store the beginning of the time for password input
+struct timeval s2; // store to this variable if there are several attempts in
+                   //   one connection.
+int MULTIPLE_AUTH = 0;
+char *USER;        // the variable for AuthInfo username
+double AuthTimeThreshold;
+
+//#define HPING_BUF 256
+//char HPING_RTT[10];
+//double HPING_RTT_DOUBLE;
+
+// the variables for storing the RTT when exchanging the keys
+double KEXINIT_TIME;
+extern double KEXINIT_TIME;
+double NEWKEYS_TIME;
+extern double NEWKEYS_TIME;
+#endif /* UAUTH_TIME */
 
 char *
 auth2_read_banner(void)
@@ -186,6 +213,14 @@ input_service_request(int type, u_int32_t seq, struct ssh *ssh)
 	Authctxt *authctxt = ssh->authctxt;
 	char *service = NULL;
 	int r, acceptit = 0;
+#ifdef UAUTH_TIME
+	//FILE *hping_fp;
+	//char hbuf[HPING_BUF];
+	//memset(hbuf,NULL,HPING_BUF);
+	//char hping_command[100] = "python /home/uehara/Research/python/wrap_hping.py ";
+	//debug("in auth2.c NEWKEYS_TIME = %lf",NEWKEYS_TIME);
+	//debug("in auth2.c KEXINIT_TIME = %lf",KEXINIT_TIME);
+#endif	/* UAUTH_TIME */
 
 	if ((r = sshpkt_get_cstring(ssh, &service, NULL)) != 0 ||
 	    (r = sshpkt_get_end(ssh)) != 0)
@@ -205,6 +240,25 @@ input_service_request(int type, u_int32_t seq, struct ssh *ssh)
 	/* XXX all other service requests are denied */
 
 	if (acceptit) {
+#ifdef UAUTH_TIME
+		//strcat(hping_command,ssh_remote_ipaddr(ssh));
+		//char *hping_cmd = &hping_command;
+		//hping_fp = popen(hping_cmd,"r");
+		//fgets(hbuf,HPING_BUF,hping_fp);
+	        //strtok(hbuf,"\n\0");  // remove CR from the result 
+					// of hping3 command
+		//strcpy(HPING_RTT,hbuf);
+		//HPING_RTT_DOUBLE = atof(HPING_RTT); // convert the result of
+						// hping to arithmetic value
+		//HPING_RTT_DOUBLE = HPING_RTT_DOUBLE * 0.001;
+			// convert the unit of result of hping
+			// from mili-second to seconds
+
+		// variable for the beginning time of authentication:
+		// s in userauth_finish() if client sends none method,
+		// s in here if not,
+		gettimeofday(&s, NULL);
+#endif /* UAUTH_TIME */
 		if ((r = sshpkt_start(ssh, SSH2_MSG_SERVICE_ACCEPT)) != 0 ||
 		    (r = sshpkt_put_cstring(ssh, service)) != 0 ||
 		    (r = sshpkt_send(ssh)) != 0 ||
@@ -276,6 +330,10 @@ input_userauth_request(int type, u_int32_t seq, struct ssh *ssh)
 		goto out;
 	debug("userauth-request for user %s service %s method %s", user, service, method);
 	debug("attempt %d failures %d", authctxt->attempt, authctxt->failures);
+
+#ifdef UAUTH_TIME
+        USER = user; // store the AuthInfo username to the global variable
+#endif  /* UAUTH_TIME */
 
 	if ((style = strchr(user, ':')) != NULL)
 		*style++ = 0;
@@ -355,6 +413,14 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 	Authctxt *authctxt = ssh->authctxt;
 	char *methods;
 	int r, partial = 0;
+#ifdef UAUTH_TIME
+	struct timeval e;
+	double authtime;
+	/* double AuthTimeThreshold = 0.2044475; */
+	char detection[10];
+	//char *password = "password";
+	struct tm *time_st;
+#endif  /* UAUTH_TIME */
 
 	if (!authctxt->valid && authenticated)
 		fatal("INTERNAL ERROR: authenticated invalid user %s",
@@ -421,7 +487,91 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		/* now we can break out */
 		authctxt->success = 1;
 		ssh_packet_set_log_preamble(ssh, "user %s", authctxt->user);
+#ifdef UAUTH_TIME
+		gettimeofday(&e, NULL);
+		time_st = localtime(&e.tv_sec); // localize the time
+
+		// s in input_service_request() is used for the beginning of
+		//     authentication in one connection,
+		// s2 in userauth_finish() is used for after that. 
+		if(MULTIPLE_AUTH == 0){
+			authtime = (e.tv_sec - s.tv_sec)
+					+ (e.tv_usec - s.tv_usec) * 1.0E-6;
+		}else{
+			authtime = (e.tv_sec - s2.tv_sec)
+					+ (e.tv_usec - s2.tv_usec) * 1.0E-6;
+		}
+
+		if (authtime < AuthTimeThreshold) {
+			strcpy(detection, "Attack");
+		} else {
+			strcpy(detection, "Normal");
+		}
+
+		logit("[Auth:Success,User:%s,IP:%s,Time:%lf,Detect:%s,RTT:%06lf,Year:%d,Month:%02d,Day:%02d,Hour:%02d,Minute:%02d,Second:%02d,MicroSec:%06d]KEXINIT:%lf,NEWKEYS:%lf",
+		USER,
+		ssh_remote_ipaddr(ssh),
+		authtime,
+		detection,
+		((KEXINIT_TIME + NEWKEYS_TIME)/2),
+		time_st->tm_year+1900,
+		time_st->tm_mon+1,
+		time_st->tm_mday,
+		time_st->tm_hour,
+		time_st->tm_min,
+		time_st->tm_sec,
+		e.tv_usec,
+		KEXINIT_TIME,
+		NEWKEYS_TIME
+		);
+#endif  /* UAUTH_TIME */
+
 	} else {
+#ifdef UAUTH_TIME
+		// ignoring none before password authentication and
+		//          fail of publickey authentication
+		if(strcmp(method,"password") == 0) {
+			gettimeofday(&e, NULL); // time of finish authentication
+			time_st = localtime(&e.tv_sec);
+
+			// s in input_service_request() is used for the
+			//     beginning of authentication in one connection,
+			// s2 in userauth_finish() is used for after that. 
+			if (MULTIPLE_AUTH == 0){
+				authtime = (e.tv_sec - s.tv_sec)
+					+ (e.tv_usec - s.tv_usec) * 1.0E-6;
+				//logit("in 0");
+			}else{
+				authtime = (e.tv_sec - s2.tv_sec)
+					+ (e.tv_usec - s2.tv_usec) * 1.0E-6;
+				//logit("in 1");
+			}
+
+			if (authtime < AuthTimeThreshold) {
+				strcpy(detection, "Attack");
+			} else {
+				strcpy(detection, "Normal");
+			}
+
+			logit("[Auth:Fail,User:%s,IP:%s,Time:%lf,Detect:%s,RTT:%06lf,Year:%d,Month:%02d,Day:%02d,Hour:%02d,Minute:%02d,Second:%02d,MicroSec:%06d]KEXINIT:%lf,NEWKEYS:%lf",
+				USER,
+				ssh_remote_ipaddr(ssh),
+				authtime,
+				detection,
+				((KEXINIT_TIME + NEWKEYS_TIME)/2),
+				time_st->tm_year+1900,
+				time_st->tm_mon+1,
+				time_st->tm_mday,
+				time_st->tm_hour,
+				time_st->tm_min,
+				time_st->tm_sec,
+				e.tv_usec,
+				KEXINIT_TIME,
+				NEWKEYS_TIME
+				);
+		}
+#endif  /* UAUTH_TIME */
+
 		/* Allow initial try of "none" auth without failure penalty */
 		if (!partial && !authctxt->server_caused_failure &&
 		    (authctxt->attempt > 1 || strcmp(method, "none") != 0))
@@ -442,6 +592,21 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		    (r = ssh_packet_write_wait(ssh)) != 0)
 			fatal("%s: %s", __func__, ssh_err(r));
 		free(methods);
+#ifdef UAUTH_TIME
+                //logit("%s",method);
+		// fulfill this part after two times
+                if(strcmp(method,"password") == 0) {
+                        MULTIPLE_AUTH = 1;
+                        gettimeofday(&s2, NULL);
+                        //logit("received password method.");
+                }
+
+		// fulfill this part at the first attempt
+                if(strcmp(method,"none") == 0) {
+                        gettimeofday(&s, NULL);
+                        //logit("received none method. started userauth. ");
+                }
+#endif  /* UAUTH_TIME */
 	}
 }
 
