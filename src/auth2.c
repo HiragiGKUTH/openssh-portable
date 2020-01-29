@@ -130,10 +130,10 @@ extern double NEWKEYS_TIME;
 #endif /* UAUTH_TIME */
 
 // logging authinfo, int authenticated is other than 0, then it means success.
-void logging_authinfo(int authenticated) {
+void logging_authinfo(int authenticated, const char *ipaddr) {
 	struct timespec start;
 	struct timespec end;
-	struct tm local_time;
+	struct tm *local_time;
 
 	// get auth finished time
 	clock_gettime(CLOCK_REALTIME, &end);
@@ -142,31 +142,31 @@ void logging_authinfo(int authenticated) {
 	local_time = localtime(&end.tv_sec); 
 
 	// if this authentication request is not first attempt, use s2 time
-	start = MULTIPLE_AUTH : s ? s2;
+	start = (MULTIPLE_AUTH) ? s : s2;
 
 	// calc authtime
 	double authtime = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1.0E-9;
 
 	// detection
-	char *detection = authtime < AuthTimeThreshold : "Attack" ? "Normal";
+	char *detection = (authtime < AuthTimeThreshold) ? "Attack" : "Normal";
 	
 	// authentication result
-	char *authresult = authenticated : "Success" ? "Fail";
+	char *authresult = (authenticated) ? "Success" : "Fail";
 
-	logit("%s,%s,%s,%lf,%s,%06lf,%d,%02d,%02d,%02d,%02d,%02d,%06d,%lf,%lf",
+	logit("%s,%s,%s,%lf,%s,%06lf,%d,%02d,%02d,%02d,%02d,%02d,%06ld,%lf,%lf",
 			authresult,
 			USER,
-			ssh_remote_ipaddr(ssh),
+			ipaddr,
 			authtime,
 			detection,
 			((KEXINIT_TIME + NEWKEYS_TIME)/2),
-			time_st->tm_year+1900,
-			time_st->tm_mon+1,
-			time_st->tm_mday,
-			time_st->tm_hour,
-			time_st->tm_min,
-			time_st->tm_sec,
-			end.tv_nsec / 1000,
+			local_time->tm_year+1900,
+			local_time->tm_mon+1,
+			local_time->tm_mday,
+			local_time->tm_hour,
+			local_time->tm_min,
+			local_time->tm_sec,
+			end.tv_nsec / 1000, // nsec -> usec
 			KEXINIT_TIME,
 			NEWKEYS_TIME);
 
@@ -456,14 +456,6 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 	Authctxt *authctxt = ssh->authctxt;
 	char *methods;
 	int r, partial = 0;
-#ifdef UAUTH_TIME
-	struct timeval e;
-	double authtime;
-	/* double AuthTimeThreshold = 0.2044475; */
-	char detection[10];
-	//char *password = "password";
-	struct tm *time_st;
-#endif  /* UAUTH_TIME */
 
 	if (!authctxt->valid && authenticated)
 		fatal("INTERNAL ERROR: authenticated invalid user %s",
@@ -531,15 +523,16 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		authctxt->success = 1;
 		ssh_packet_set_log_preamble(ssh, "user %s", authctxt->user);
 #ifdef UAUTH_TIME
-		logging_authinfo(authenticated);
+		logging_authinfo(authenticated, ssh_remote_ipaddr(ssh));
 #endif  /* UAUTH_TIME */
 
 	} else {
+
 #ifdef UAUTH_TIME
 		// ignoring none before password authentication and
 		//          fail of publickey authentication
 		if(strcmp(method,"password") == 0) {
-			logging_authinfo(authenticated);
+			logging_authinfo(authenticated, ssh_remote_ipaddr(ssh));
 		}
 #endif  /* UAUTH_TIME */
 
@@ -574,7 +567,7 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 
 		// fulfill this part at the first attempt
 		if(strcmp(method,"none") == 0) {
-			gettimeofday(&s, NULL);
+			clock_gettime(CLOCK_REALTIME, &s);
 			//logit("received none method. started userauth. ");
 		}
 #endif  /* UAUTH_TIME */
