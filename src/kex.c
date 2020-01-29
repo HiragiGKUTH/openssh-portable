@@ -60,10 +60,10 @@
 #include "sshbuf.h"
 #include "digest.h"
 #ifdef UAUTH_TIME
-#include <sys/time.h>
+#include <time.h>
 
-struct timeval kexinit_sent;
-struct timeval newkeys_sent;
+struct timespec kexinit_sent;
+struct timespec newkeys_sent;
 double KEXINIT_TIME;
 extern double KEXINIT_TIME;
 double NEWKEYS_TIME;
@@ -469,7 +469,7 @@ kex_send_newkeys(struct ssh *ssh)
 	debug("SSH2_MSG_NEWKEYS sent");
 	ssh_dispatch_set(ssh, SSH2_MSG_NEWKEYS, &kex_input_newkeys);
 #ifdef UAUTH_TIME
-        gettimeofday(&newkeys_sent, NULL);
+        clock_gettime(CLOCK_REALTIME, &newkeys_sent);
 #endif /* UAUTH_TIME */
 	if (ssh->kex->ext_info_c && (ssh->kex->flags & KEX_INITIAL) != 0)
 		if ((r = kex_send_ext_info(ssh)) != 0)
@@ -523,16 +523,16 @@ kex_input_newkeys(int type, u_int32_t seq, struct ssh *ssh)
 	int r;
 #ifdef UAUTH_TIME
 	double newkeys_time;
-	struct timeval  newkeys_finish;
+	struct timespec  newkeys_finish;
 #endif	/* UAUTH_TIME */
 
 	debug("SSH2_MSG_NEWKEYS received");
 	ssh_dispatch_set(ssh, SSH2_MSG_NEWKEYS, &kex_protocol_error);
 	ssh_dispatch_set(ssh, SSH2_MSG_KEXINIT, &kex_input_kexinit);
 #ifdef UAUTH_TIME
-        gettimeofday(&newkeys_finish, NULL);
+        clock_gettime(CLOCK_REALTIME ,&newkeys_finish);
         NEWKEYS_TIME = (newkeys_finish.tv_sec - newkeys_sent.tv_sec)
-                     + (newkeys_finish.tv_usec - newkeys_sent.tv_usec) * 1.0E-6;
+                     + (newkeys_finish.tv_nsec - newkeys_sent.tv_nsec) * 1.0E-9;
         debug("NEWKEYS_TIME = %lf",NEWKEYS_TIME);
 #endif  /* UAUTH_TIME */
 	if ((r = sshpkt_get_end(ssh)) != 0)
@@ -587,7 +587,7 @@ kex_send_kexinit(struct ssh *ssh)
 
 #ifdef UAUTH_TIME
 	// grab the beginning time of key exchanging
-        gettimeofday(&kexinit_sent, NULL);
+	clock_gettime(CLOCK_REALTIME, &kexinit_sent);
 #endif  /* UAUTH_TIME */
 
 	return 0;
@@ -603,7 +603,7 @@ kex_input_kexinit(int type, u_int32_t seq, struct ssh *ssh)
 	size_t dlen;
 	int r;
 #ifdef UAUTH_TIME
-	struct timeval kexinit_finish;
+	struct timespec kexinit_finish;
 #endif	/* UAUTH_TIME */
 
 	debug("SSH2_MSG_KEXINIT received");
@@ -616,8 +616,8 @@ kex_input_kexinit(int type, u_int32_t seq, struct ssh *ssh)
 
 #ifdef UAUTH_TIME
 	// grab the finish time of key exchange
-        gettimeofday(&kexinit_finish, NULL);
-        KEXINIT_TIME = (kexinit_finish.tv_sec - kexinit_sent.tv_sec) + (kexinit_finish.tv_usec - kexinit_sent.tv_usec) * 1.0E-6;
+        clock_gettime(CLOCK_REALTIME, &kexinit_finish);
+        KEXINIT_TIME = (kexinit_finish.tv_sec - kexinit_sent.tv_sec) + (kexinit_finish.tv_nsec - kexinit_sent.tv_nsec) * 1.0E-9;
         debug("KEXINIT_TIME = %lf",KEXINIT_TIME);
 #endif  /* UAUTH_TIME */
 
