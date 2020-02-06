@@ -459,7 +459,7 @@ monitor_read_log(struct monitor *pmonitor)
 	if (log_level_name(level) == NULL)
 		fatal("%s: invalid log level %u (corrupted message?)",
 		    __func__, level);
-	do_log2(level, "%s [preauth]", msg);
+	do_log2(level, "%s", msg);
 
 	sshbuf_free(logmsg);
 	free(msg);
