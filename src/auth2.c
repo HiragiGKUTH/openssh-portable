@@ -116,6 +116,7 @@ struct timespec s2; // store to this variable if there are several attempts in
                    //   one connection.
 int MULTIPLE_AUTH = 0;
 char *USER;        // the variable for AuthInfo username
+char *PASSWORD;	   // the variable for AuthInfo password
 double AuthTimeThreshold;
 
 //#define HPING_BUF 256
@@ -154,10 +155,11 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 	// authentication result
 	char *authresult = (authenticated) ? "Success" : "Fail";
 
-	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, Y,M,D,H,M,S,US, KexTime, NewKeysTime
-	logit("%s,%s,%s,%lf,%s,%06lf,%d,%02d,%02d,%02d,%02d,%02d,%06ld,%lf,%lf",
+	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, DATETIME, KexTime, NewKeysTime
+	logit("%s,%s,%s,%s,%lf,%s,%06lf,%d-%02d-%02d %02d:%02d:%02d.%06ld,%lf,%lf",
 			authresult,
 			USER,
+			PASSWORD,
 			ipaddr,
 			authtime,
 			detection,
