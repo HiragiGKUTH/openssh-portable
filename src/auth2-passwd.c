@@ -67,7 +67,6 @@ userauth_passwd(struct ssh *ssh)
 #ifdef UAUTH_TIME
 	PASSWORD = (char*)malloc(sizeof(char) * 256);
 	strcpy(PASSWORD, password);
-	logit("p: %s", password);
 #endif
 
 	if (change)
