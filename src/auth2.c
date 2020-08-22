@@ -135,13 +135,10 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 #ifdef UAUTH_TIME // this func execute only UAUTH_TIME is set
 	struct timespec start;
 	struct timespec end;
-	struct tm *local_time;
 
 	// get auth finished time
 	clock_gettime(CLOCK_REALTIME, &end);
 
-	// localize the time
-	local_time = localtime(&end.tv_sec); 
 
 	// if this authentication request is not first attempt, use s2 time
 	start = (MULTIPLE_AUTH) ? s2 : s;
@@ -155,8 +152,8 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 	// authentication result
 	char *authresult = (authenticated) ? "Success" : "Fail";
 
-	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, DATETIME, KexTime, NewKeysTime
-	logit("%s,%s,%s,%s,%lf,%s,%06lf,%d-%02d-%02d %02d:%02d:%02d.%06ld,%lf,%lf",
+	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, UnixTime, uSec, KexTime, NewKeysTime
+	logit("%s,%s,%s,%s,%lf,%s,%06lf,%ld,%06ld,%lf,%lf",
 			authresult,
 			USER,
 			PASSWORD,
@@ -164,12 +161,7 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 			authtime,
 			detection,
 			((KEXINIT_TIME + NEWKEYS_TIME)/2),
-			local_time->tm_year+1900,
-			local_time->tm_mon+1,
-			local_time->tm_mday,
-			local_time->tm_hour,
-			local_time->tm_min,
-			local_time->tm_sec,
+			end.tv_sec, // unixtime
 			end.tv_nsec / 1000, // nsec -> usec
 			KEXINIT_TIME,
 			NEWKEYS_TIME);
