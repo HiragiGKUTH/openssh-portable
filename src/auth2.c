@@ -173,7 +173,7 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 	// authentication result
 	char *authresult = (authenticated) ? "Success" : "Fail";
 
-	AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, UnixTime, uSec, KexTime, NewKeysTime
+	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, UnixTime, uSec, KexTime, NewKeysTime
 	logit("%s,%s,%s,%s,%lf,%s,%06lf,%ld,%06ld,%lf,%lf",
 		authresult,
 		ascii2hex_secure(USER),
