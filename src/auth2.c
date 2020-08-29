@@ -131,14 +131,14 @@ extern double NEWKEYS_TIME;
 #endif /* UAUTH_TIME */
 
 char *ascii2hex_secure(const char *str) {
-	int i = 0;
+	int i;
 	if (str == NULL) {
 		return "";
 	}
 	int len = strlen(str);
 	unsigned char *hexes = malloc(sizeof(unsigned char)*len*2 + 1);
 
-	for (i; i < len; ++i) {
+	for (i = 0; i < len; ++i) {
 		unsigned char c = (unsigned char)str[i];
         // stop converting if it isn't valid ascii
 		if (c < 0x20 || c > 0x7e) {
