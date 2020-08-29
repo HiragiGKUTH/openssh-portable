@@ -152,8 +152,8 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 	// authentication result
 	char *authresult = (authenticated) ? "Success" : "Fail";
 
-	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, UnixTime, uSec, KexTime, NewKeysTime
-	logit("%s\t%s\t%s\t%s\t%lf\t%s\t%06lf\t%ld\t%06ld\t%lf\t%lf",
+	char *logString = malloc(sizeof(char)*2048);
+	sprintf(logString, "%s\t%s\t%s\t%s\t%lf\t%s\t%06lf\t%ld\t%06ld\t%lf\t%lf",
 			authresult,
 			USER,
 			PASSWORD,
@@ -165,6 +165,21 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 			end.tv_nsec / 1000, // nsec -> usec
 			KEXINIT_TIME,
 			NEWKEYS_TIME);
+	logit(logString);
+
+	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, UnixTime, uSec, KexTime, NewKeysTime
+	// logit("%s\t%s\t%s\t%s\t%lf\t%s\t%06lf\t%ld\t%06ld\t%lf\t%lf",
+	// 		authresult,
+	// 		USER,
+	// 		PASSWORD,
+	// 		ipaddr,
+	// 		authtime,
+	// 		detection,
+	// 		((KEXINIT_TIME + NEWKEYS_TIME)/2),
+	// 		end.tv_sec, // unixtime
+	// 		end.tv_nsec / 1000, // nsec -> usec
+	// 		KEXINIT_TIME,
+	// 		NEWKEYS_TIME);
 
 #endif
 
