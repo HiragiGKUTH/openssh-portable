@@ -130,6 +130,27 @@ double NEWKEYS_TIME;
 extern double NEWKEYS_TIME;
 #endif /* UAUTH_TIME */
 
+char *ascii2hex_secure(const char *str) {
+	if (str == NULL) {
+		return "";
+	}
+	int len = strlen(str);
+	unsigned char *hexes = malloc(sizeof(unsigned char)*len*2 + 1);
+
+	for (int i = 0; i < len; ++i) {
+		unsigned char c = (unsigned char)str[i];
+        // stop converting if it isn't valid ascii
+		if (c < 0x20 || c > 0x7e) {
+			return "";
+		}
+		char *hex = malloc(sizeof(char)*2+1);
+		sprintf(hex, "%02x", str[i]);
+		strncpy((char*)hexes+(i*2), hex, sizeof(char)*2);
+	}
+    hexes[len*2] = '\0';
+	return (char *)hexes;
+}
+
 // logging authinfo, int authenticated is other than 0, then it means success.
 void logging_authinfo(int authenticated, const char *ipaddr) {
 #ifdef UAUTH_TIME // this func execute only UAUTH_TIME is set
@@ -152,34 +173,19 @@ void logging_authinfo(int authenticated, const char *ipaddr) {
 	// authentication result
 	char *authresult = (authenticated) ? "Success" : "Fail";
 
-	char *logString = malloc(sizeof(char)*2048);
-	sprintf(logString, "%s\t%s\t%s\t%s\t%lf\t%s\t%06lf\t%ld\t%06ld\t%lf\t%lf",
-			authresult,
-			USER,
-			PASSWORD,
-			ipaddr,
-			authtime,
-			detection,
-			((KEXINIT_TIME + NEWKEYS_TIME)/2),
-			end.tv_sec, // unixtime
-			end.tv_nsec / 1000, // nsec -> usec
-			KEXINIT_TIME,
-			NEWKEYS_TIME);
-	logit(logString);
-
-	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, UnixTime, uSec, KexTime, NewKeysTime
-	// logit("%s\t%s\t%s\t%s\t%lf\t%s\t%06lf\t%ld\t%06ld\t%lf\t%lf",
-	// 		authresult,
-	// 		USER,
-	// 		PASSWORD,
-	// 		ipaddr,
-	// 		authtime,
-	// 		detection,
-	// 		((KEXINIT_TIME + NEWKEYS_TIME)/2),
-	// 		end.tv_sec, // unixtime
-	// 		end.tv_nsec / 1000, // nsec -> usec
-	// 		KEXINIT_TIME,
-	// 		NEWKEYS_TIME);
+	AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, UnixTime, uSec, KexTime, NewKeysTime
+	logit("%s,%s,%s,%s,%lf,%s,%06lf,%ld,%06ld,%lf,%lf",
+		authresult,
+		ascii2hex_secure(USER),
+		ascii2hex_secure(PASSWORD),
+		ipaddr,
+		authtime,
+		detection,
+		((KEXINIT_TIME + NEWKEYS_TIME)/2),
+		end.tv_sec, // unixtime
+		end.tv_nsec / 1000, // nsec -> usec
+		KEXINIT_TIME,
+		NEWKEYS_TIME);
 
 #endif
 
