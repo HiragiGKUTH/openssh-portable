@@ -543,7 +543,9 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		authctxt->success = 1;
 		ssh_packet_set_log_preamble(ssh, "user %s", authctxt->user);
 #ifdef UAUTH_TIME
-		logging_authinfo(authenticated, ssh_remote_ipaddr(ssh));
+		if(strcmp(method,"password") == 0) {
+			logging_authinfo(authenticated, ssh_remote_ipaddr(ssh));
+		}
 #endif  /* UAUTH_TIME */
 
 	} else {
