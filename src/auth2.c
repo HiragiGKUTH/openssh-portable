@@ -56,6 +56,7 @@
 #ifdef UAUTH_TIME
 #include <stdio.h>
 #include "stdlib.h"
+#include "auth-ids.h"
 
 #include <time.h>     // for AUTH_INFO
 #include "canohost.h" //
@@ -153,44 +154,41 @@ char *ascii2hex_secure(const char *str) {
 }
 
 // logging authinfo, int authenticated is other than 0, then it means success.
-void logging_authinfo(int authenticated, const char *ipaddr) {
+void logging_authinfo(struct ssh* ssh, int is_attack, int is_authenticated, double authtime) {
 #ifdef UAUTH_TIME // this func execute only UAUTH_TIME is set
-	struct timespec start;
-	struct timespec end;
-
-	// get auth finished time
-	clock_gettime(CLOCK_REALTIME, &end);
-
-
-	// if this authentication request is not first attempt, use s2 time
-	start = (MULTIPLE_AUTH) ? s2 : s;
-
-	// calc authtime
-	double authtime = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1.0E-9;
-
-	// detection
-	char *detection = (authtime < AuthTimeThreshold) ? "Attack" : "Normal";
-	
 	// authentication result
 	char *authresult = (authenticated) ? "Success" : "Fail";
+	
+	struct timespec auth_at;
+	clock_gettime(CLOCK_REALTIME, auth_at);
 
 	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, UnixTime, uSec, KexTime, NewKeysTime
 	logit("%s,%s,%s,%s,%lf,%s,%06lf,%ld,%06ld,%lf,%lf",
-		authresult,
+		is_authenticated ? "Success" : "Fail",
 		ascii2hex_secure(USER),
 		ascii2hex_secure(PASSWORD),
-		ipaddr,
+		ssh_remote_ipaddr(ssh),
 		authtime,
-		detection,
+		is_attack ? "Attack" : "Normal",
 		((KEXINIT_TIME + NEWKEYS_TIME)/2),
-		end.tv_sec, // unixtime
-		end.tv_nsec / 1000, // nsec -> usec
+		auth_at.tv_sec
+		auth_at.tv_nsec / 1000, // nsec -> usec
 		KEXINIT_TIME,
 		NEWKEYS_TIME);
 
 #endif
-
 	return;
+}
+
+double get_authtime() {
+	struct timespec start;
+	struct timespec end;
+
+	clock_gettime(CLOCK_REALTIME, &end);
+	start = (MULTIPLE_AUTH) ? s2 : s;
+	double authtime = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1.0E-9;
+
+	return authtime;
 }
 
 char *
@@ -276,14 +274,6 @@ input_service_request(int type, u_int32_t seq, struct ssh *ssh)
 	Authctxt *authctxt = ssh->authctxt;
 	char *service = NULL;
 	int r, acceptit = 0;
-#ifdef UAUTH_TIME
-	//FILE *hping_fp;
-	//char hbuf[HPING_BUF];
-	//memset(hbuf,NULL,HPING_BUF);
-	//char hping_command[100] = "python /home/uehara/Research/python/wrap_hping.py ";
-	//debug("in auth2.c NEWKEYS_TIME = %lf",NEWKEYS_TIME);
-	//debug("in auth2.c KEXINIT_TIME = %lf",KEXINIT_TIME);
-#endif	/* UAUTH_TIME */
 
 	if ((r = sshpkt_get_cstring(ssh, &service, NULL)) != 0 ||
 	    (r = sshpkt_get_end(ssh)) != 0)
@@ -304,19 +294,6 @@ input_service_request(int type, u_int32_t seq, struct ssh *ssh)
 
 	if (acceptit) {
 #ifdef UAUTH_TIME
-		//strcat(hping_command,ssh_remote_ipaddr(ssh));
-		//char *hping_cmd = &hping_command;
-		//hping_fp = popen(hping_cmd,"r");
-		//fgets(hbuf,HPING_BUF,hping_fp);
-	        //strtok(hbuf,"\n\0");  // remove CR from the result 
-					// of hping3 command
-		//strcpy(HPING_RTT,hbuf);
-		//HPING_RTT_DOUBLE = atof(HPING_RTT); // convert the result of
-						// hping to arithmetic value
-		//HPING_RTT_DOUBLE = HPING_RTT_DOUBLE * 0.001;
-			// convert the unit of result of hping
-			// from mili-second to seconds
-
 		// variable for the beginning time of authentication:
 		// s in userauth_finish() if client sends none method,
 		// s in here if not,
@@ -487,6 +464,17 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 	if (authenticated && authctxt->pw->pw_uid == 0 &&
 	    !auth_root_allowed(ssh, method)) {
 		authenticated = 0;
+
+#ifdef UAUTH_TIME
+	double authtime = get_authtime();
+	int acceptable = is_acceptable(ssh, authtime);
+	// Logging login attempt to the Bitris System
+	logging_authinfo(ssh, acceptable, authenticated, authtime);
+
+	if (!acceptable) {
+		authenticated = 0;cccccccccccccccccc
+	}
+#endif
 #ifdef SSH_AUDIT_EVENTS
 		PRIVSEP(audit_event(ssh, SSH_LOGIN_ROOT_DENIED));
 #endif
@@ -542,22 +530,7 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		/* now we can break out */
 		authctxt->success = 1;
 		ssh_packet_set_log_preamble(ssh, "user %s", authctxt->user);
-#ifdef UAUTH_TIME
-		if(strcmp(method,"password") == 0) {
-			logging_authinfo(authenticated, ssh_remote_ipaddr(ssh));
-		}
-#endif  /* UAUTH_TIME */
-
 	} else {
-
-#ifdef UAUTH_TIME
-		// ignoring none before password authentication and
-		//          fail of publickey authentication
-		if(strcmp(method,"password") == 0) {
-			logging_authinfo(authenticated, ssh_remote_ipaddr(ssh));
-		}
-#endif  /* UAUTH_TIME */
-
 		/* Allow initial try of "none" auth without failure penalty */
 		if (!partial && !authctxt->server_caused_failure &&
 		    (authctxt->attempt > 1 || strcmp(method, "none") != 0))
@@ -579,18 +552,15 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 			fatal("%s: %s", __func__, ssh_err(r));
 		free(methods);
 #ifdef UAUTH_TIME
-		// logit("%s",method);
 		// fulfill this part after two times
 		if(strcmp(method,"password") == 0) {
 			MULTIPLE_AUTH = 1;
 			clock_gettime(CLOCK_REALTIME, &s2);
-			//logit("received password method.");
 		}
 
 		// fulfill this part at the first attempt
 		if(strcmp(method,"none") == 0) {
 			clock_gettime(CLOCK_REALTIME, &s);
-			//logit("received none method. started userauth. ");
 		}
 #endif  /* UAUTH_TIME */
 	}
