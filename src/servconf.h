@@ -211,9 +211,6 @@ typedef struct {
 	int	fingerprint_hash;
 	int	expose_userauth_info;
 	u_int64_t timing_secret;
-#ifdef UAUTH_TIME
-        double  auth_time_threshold;
-#endif /* UAUTH_TIME */
 }       ServerOptions;
 
 /* Information about the incoming connection as used by Match */
@@ -234,7 +231,7 @@ struct connection_info {
 
 /* the variable for authentication time threshold */
 /* an instance of this variable is declared in auth2.c */
-extern double AuthTimeThreshold;
+// extern double AuthTimeThreshold;
 #endif  /* UAUTH_TIME */
 
 /*

@@ -60,13 +60,12 @@
 #include "sshbuf.h"
 #include "digest.h"
 #ifdef UAUTH_TIME
+#include "auth-ids.h"
 #include <time.h>
 
 struct timespec kexinit_sent;
 struct timespec newkeys_sent;
-double KEXINIT_TIME;
 extern double KEXINIT_TIME;
-double NEWKEYS_TIME;
 extern double NEWKEYS_TIME;
 #endif  /* UAUTH_TIME */
 

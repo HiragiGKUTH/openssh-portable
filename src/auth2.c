@@ -53,16 +53,11 @@
 #include "dispatch.h"
 #include "pathnames.h"
 #include "ssherr.h"
-#ifdef UAUTH_TIME
-#include <stdio.h>
-#include "stdlib.h"
-#include "auth-ids.h"
-
-#include <time.h>     // for AUTH_INFO
-#include "canohost.h" //
-#endif  /* UAUTH_TIME */
 #ifdef GSSAPI
 #include "ssh-gss.h"
+#endif
+#ifdef UAUTH_TIME
+#include "auth-ids.h"
 #endif
 #include "monitor_wrap.h"
 #include "digest.h"
@@ -110,86 +105,6 @@ static char *authmethods_get(Authctxt *authctxt);
 #define MATCH_BOTH	2	/* method and submethod match */
 #define MATCH_PARTIAL	3	/* method matches, submethod can't be checked */
 static int list_starts_with(const char *, const char *, const char *);
-
-#ifdef UAUTH_TIME
-struct timespec s;  // store the beginning of the time for password input
-struct timespec s2; // store to this variable if there are several attempts in
-                   //   one connection.
-int MULTIPLE_AUTH = 0;
-char *USER;        // the variable for AuthInfo username
-char *PASSWORD;	   // the variable for AuthInfo password
-double AuthTimeThreshold;
-
-//#define HPING_BUF 256
-//char HPING_RTT[10];
-//double HPING_RTT_DOUBLE;
-
-// the variables for storing the RTT when exchanging the keys
-double KEXINIT_TIME;
-extern double KEXINIT_TIME;
-double NEWKEYS_TIME;
-extern double NEWKEYS_TIME;
-#endif /* UAUTH_TIME */
-
-char *ascii2hex_secure(const char *str) {
-	int i;
-	if (str == NULL) {
-		return "";
-	}
-	int len = strlen(str);
-	unsigned char *hexes = malloc(sizeof(unsigned char)*len*2 + 1);
-
-	for (i = 0; i < len; ++i) {
-		unsigned char c = (unsigned char)str[i];
-        // stop converting if it isn't valid ascii
-		if (c < 0x20 || c > 0x7e) {
-			return "";
-		}
-		char *hex = malloc(sizeof(char)*2+1);
-		sprintf(hex, "%02x", str[i]);
-		strncpy((char*)hexes+(i*2), hex, sizeof(char)*2);
-	}
-    hexes[len*2] = '\0';
-	return (char *)hexes;
-}
-
-// logging authinfo, int authenticated is other than 0, then it means success.
-void logging_authinfo(struct ssh* ssh, int is_attack, int is_authenticated, double authtime) {
-#ifdef UAUTH_TIME // this func execute only UAUTH_TIME is set
-	// authentication result
-	char *authresult = (authenticated) ? "Success" : "Fail";
-	
-	struct timespec auth_at;
-	clock_gettime(CLOCK_REALTIME, auth_at);
-
-	// AuthResult, UserName, IPAddr, AuthTime, DetectionString, RTT, UnixTime, uSec, KexTime, NewKeysTime
-	logit("%s,%s,%s,%s,%lf,%s,%06lf,%ld,%06ld,%lf,%lf",
-		is_authenticated ? "Success" : "Fail",
-		ascii2hex_secure(USER),
-		ascii2hex_secure(PASSWORD),
-		ssh_remote_ipaddr(ssh),
-		authtime,
-		is_attack ? "Attack" : "Normal",
-		((KEXINIT_TIME + NEWKEYS_TIME)/2),
-		auth_at.tv_sec
-		auth_at.tv_nsec / 1000, // nsec -> usec
-		KEXINIT_TIME,
-		NEWKEYS_TIME);
-
-#endif
-	return;
-}
-
-double get_authtime() {
-	struct timespec start;
-	struct timespec end;
-
-	clock_gettime(CLOCK_REALTIME, &end);
-	start = (MULTIPLE_AUTH) ? s2 : s;
-	double authtime = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1.0E-9;
-
-	return authtime;
-}
 
 char *
 auth2_read_banner(void)
@@ -294,10 +209,9 @@ input_service_request(int type, u_int32_t seq, struct ssh *ssh)
 
 	if (acceptit) {
 #ifdef UAUTH_TIME
-		// variable for the beginning time of authentication:
-		// s in userauth_finish() if client sends none method,
-		// s in here if not,
-		clock_gettime(CLOCK_REALTIME, &s);
+		// this point of auth start is:
+		//   called if client send nothing as an authentication start request.
+		point_auth_start(FIRST_ATTEMPT);
 #endif /* UAUTH_TIME */
 		if ((r = sshpkt_start(ssh, SSH2_MSG_SERVICE_ACCEPT)) != 0 ||
 		    (r = sshpkt_put_cstring(ssh, service)) != 0 ||
@@ -370,10 +284,6 @@ input_userauth_request(int type, u_int32_t seq, struct ssh *ssh)
 		goto out;
 	debug("userauth-request for user %s service %s method %s", user, service, method);
 	debug("attempt %d failures %d", authctxt->attempt, authctxt->failures);
-
-#ifdef UAUTH_TIME
-        USER = user; // store the AuthInfo username to the global variable
-#endif  /* UAUTH_TIME */
 
 	if ((style = strchr(user, ':')) != NULL)
 		*style++ = 0;
@@ -464,22 +374,26 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 	if (authenticated && authctxt->pw->pw_uid == 0 &&
 	    !auth_root_allowed(ssh, method)) {
 		authenticated = 0;
-
-#ifdef UAUTH_TIME
-	double authtime = get_authtime();
-	int acceptable = is_acceptable(ssh, authtime);
-	// Logging login attempt to the Bitris System
-	logging_authinfo(ssh, acceptable, authenticated, authtime);
-
-	if (!acceptable) {
-		authenticated = 0;cccccccccccccccccc
-	}
-#endif
 #ifdef SSH_AUDIT_EVENTS
 		PRIVSEP(audit_event(ssh, SSH_LOGIN_ROOT_DENIED));
 #endif
 	}
 
+#ifdef UAUTH_TIME
+	if (strcmp(method, "password") == 0) {
+		double authtime = get_authtime();
+		// Judge if this login attempt is malicious based on Bitris System
+		int judge = judge_malicious(ssh, authtime);
+		// Logging login attempt to the Bitris System
+		log_authinfo(ssh, judge, authtime);
+
+		// if this login attempt judged as ATTACK, force authentication failed
+		if (judge == ATTACK) {
+			authenticated = 0;
+		}	
+	}
+	
+#endif
 	if (authenticated && options.num_auth_methods != 0) {
 		if (!auth2_update_methods_lists(authctxt, method, submethod)) {
 			authenticated = 0;
@@ -554,15 +468,15 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 #ifdef UAUTH_TIME
 		// fulfill this part after two times
 		if(strcmp(method,"password") == 0) {
-			MULTIPLE_AUTH = 1;
-			clock_gettime(CLOCK_REALTIME, &s2);
+			point_auth_start(SECOND_ATTEMPT);
 		}
-
 		// fulfill this part at the first attempt
 		if(strcmp(method,"none") == 0) {
-			clock_gettime(CLOCK_REALTIME, &s);
+			// this point of auth start is:
+			//   called if client sends a "none" method as an authentication start request.
+			point_auth_start(FIRST_ATTEMPT);
 		}
-#endif  /* UAUTH_TIME */
+#endif
 	}
 }
 

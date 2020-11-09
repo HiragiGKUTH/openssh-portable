@@ -87,9 +87,6 @@
 /* Define if you have BSD auth support */
 #undef BSD_AUTH
 
-/* Define whether to enable Uehara's authentication time code block */
-#undef UAUTH_TIME
-
 /* Define if you want to specify the path to your lastlog file */
 #undef CONF_LASTLOG_FILE
 
@@ -1871,6 +1868,9 @@
 
 /* Support routing domains using Linux VRF */
 #undef SYS_RDOMAIN_LINUX
+
+/* Define if you have authentication time feature */
+#undef UAUTH_TIME
 
 /* Support passwords > 8 chars */
 #undef UNIXWARE_LONG_PASSWORDS

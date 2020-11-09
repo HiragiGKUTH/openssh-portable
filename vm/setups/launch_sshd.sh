@@ -2,7 +2,8 @@
 
 cd ../../src
 # ./configure --with-authtime
-make
+make clean
+make sshd
 mv ./sshd /usr/sbin/sshd3
 /usr/sbin/rsyslogd
 ssh-keygen -A

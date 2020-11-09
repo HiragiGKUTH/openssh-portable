@@ -510,9 +510,6 @@ typedef enum {
 	sStreamLocalBindMask, sStreamLocalBindUnlink,
 	sAllowStreamLocalForwarding, sFingerprintHash, sDisableForwarding,
 	sExposeAuthInfo, sRDomain,
-#ifdef UAUTH_TIME
-        sAuthTimeThreshold, // token for authentication time threshold
-#endif  /* UAUTH_TIME */
 	sDeprecated, sIgnore, sUnsupported
 } ServerOpCodes;
 
@@ -661,10 +658,6 @@ static struct {
 	{ "exposeauthinfo", sExposeAuthInfo, SSHCFG_ALL },
 	{ "rdomain", sRDomain, SSHCFG_ALL },
 	{ "casignaturealgorithms", sCASignatureAlgorithms, SSHCFG_ALL },
-#ifdef UAUTH_TIME
-	// authentication time threshold
-        { "authtimethreshold", sAuthTimeThreshold, SSHCFG_GLOBAL},
-#endif  /* UAUTH_TIME */
 	{ NULL, sBadOption, 0 }
 };
 
@@ -2180,15 +2173,6 @@ process_server_config_line(ServerOptions *options, char *line,
 			*charptr = xstrdup(arg);
 		break;
 
-#ifdef UAUTH_TIME
-	// store the address for the strings that is read from config file
-	//  to the variable, `arg'
-        case sAuthTimeThreshold:
-                arg = strdelim(&cp);
-                AuthTimeThreshold = atof(arg);
-                break;
-
-#endif  /* UAUTH_TIME */
 	case sDeprecated:
 	case sIgnore:
 	case sUnsupported:
