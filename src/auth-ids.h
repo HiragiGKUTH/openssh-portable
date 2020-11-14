@@ -1,4 +1,4 @@
-/* This module created by hiragi-gkuth on Kansai Univ. Kobayasi seminor */
+/* This module created by hiragi-gkuth on Kansai Univ. Kobayashi Lab. */
 
 #ifndef AUTH_IDS_H
 #define AUTH_IDS_H
@@ -30,5 +30,7 @@ int judge_malicious(struct ssh* ssh, double authtime);
 double get_authtime();
 void point_auth_start(int attempt_kind);
 void log_authinfo(struct ssh* ssh, int judge, double authtime);
+
+void register_bitris_config_notify();
 
 #endif

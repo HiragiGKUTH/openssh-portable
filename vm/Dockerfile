@@ -2,7 +2,7 @@ FROM alpine as sshd-linux
 
 WORKDIR /root
 RUN apk update && \
-    apk add --no-cache openssh openrc gcc g++ make openssl-dev zlib-dev bash rsyslog ruby ruby-dev && \
+    apk add --no-cache openssh openrc gcc g++ make openssl-dev zlib-dev bash rsyslog ruby ruby-dev autoconf automake && \
     gem install fluentd json webrick etc && \
     fluentd -s ./fluent
 
