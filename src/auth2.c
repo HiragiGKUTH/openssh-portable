@@ -378,7 +378,7 @@ userauth_finish(struct ssh *ssh, int authenticated, const char *method,
 		PRIVSEP(audit_event(ssh, SSH_LOGIN_ROOT_DENIED));
 #endif
 	}
-
+	
 #ifdef UAUTH_TIME
 	if (strcmp(method, "password") == 0) {
 		double authtime = get_authtime();

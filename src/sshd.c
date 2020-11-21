@@ -123,6 +123,14 @@
 #include "version.h"
 #include "ssherr.h"
 
+/* Bitris System */
+#ifdef UAUTH_TIME
+// include
+#include "auth-ids.h"
+// signal
+static volatile sig_atomic_t received_sigusr1 = 0;
+#endif
+
 /* Re-exec fds */
 #define REEXEC_DEVCRYPTO_RESERVED_FD	(STDERR_FILENO + 1)
 #define REEXEC_STARTUP_PIPE_FD		(STDERR_FILENO + 2)
@@ -284,6 +292,17 @@ close_startup_pipes(void)
 			if (startup_pipes[i] != -1)
 				close(startup_pipes[i]);
 }
+
+#ifdef UAUTH_TIME
+/* Signal handler for SIGUSR1. Sshd reload BitrisIDS System Parameters
+ * from file when it received.
+ */
+static void
+sigusr1_handler(int sig) {
+	received_sigusr1 = 1;
+	signal(SIGUSR1, sigusr1_handler);
+}
+#endif
 
 /*
  * Signal handler for SIGHUP.  Sshd execs itself when it receives SIGHUP;
@@ -1070,6 +1089,14 @@ server_accept_loop(int *sock_in, int *sock_out, int *newsock, int *config_s)
 	 * the daemon is killed with a signal.
 	 */
 	for (;;) {
+#ifdef UAUTH_TIME
+		// when parent process received "SIGUSR1"
+		// reload bitris ids model from file, and store models into global variable on "auth-ids.h"
+		if (received_sigusr1) {
+			received_sigusr1 = 0; // drop flag
+			ids_file2shm("/etc/ssh/bitris_ids_model.csv");
+		}
+#endif
 		if (received_sighup) {
 			if (!lameduck) {
 				debug("Received SIGHUP; waiting for children");
@@ -1922,7 +1949,9 @@ main(int ac, char **av)
 		signal(SIGCHLD, main_sigchld_handler);
 		signal(SIGTERM, sigterm_handler);
 		signal(SIGQUIT, sigterm_handler);
-
+		#ifdef UAUTH_TIME
+		signal(SIGUSR1, sigusr1_handler);
+		#endif
 		/*
 		 * Write out the pid file after the sigterm handler
 		 * is setup and the listen sockets are bound
