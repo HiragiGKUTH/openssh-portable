@@ -13,4 +13,4 @@ make sshd
 mv sshd /usr/sbin/sshd3
 # relaunch
 /usr/sbin/rsyslogd
-/usr/sbin/sshd3 -f /etc/ssh/sshd_config -h /etc/ssh/ssh_host_rsa_key
+/usr/sbin/sshd3 -d -f /etc/ssh/sshd_config -h /etc/ssh/ssh_host_rsa_key
